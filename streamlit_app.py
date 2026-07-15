@@ -82,7 +82,7 @@ if prompt := st.chat_input("Ask a question..."):
         elif msg["role"] == "user":
             lc_messages.append(HumanMessage(content=msg["content"]))
         elif msg["role"] == "assistant":
-            lc_messages.append(AIMessage(content=msg["content"]))
+            lc_messages.append(AIMessage(content=msg.get("content", ""), tool_calls=msg.get("tool_calls", [])))
         elif msg["role"] == "tool":
             lc_messages.append(ToolMessage(content=msg["content"], tool_call_id=msg["tool_call_id"]))
 
@@ -94,6 +94,11 @@ if prompt := st.chat_input("Ask a question..."):
             # Loop for tool calls
             while response.tool_calls:
                 lc_messages.append(response)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": response.content,
+                    "tool_calls": response.tool_calls
+                })
                 for tool_call in response.tool_calls:
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
