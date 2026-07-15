@@ -23,7 +23,7 @@ st.title("🤖 Simple AI Agent")
 @st.cache_resource
 def get_agent():
     llm = ChatGroq(
-        model="llama3-70b-8192",
+        model="mixtral-8x7b-32768",
         temperature=0
     )
 
