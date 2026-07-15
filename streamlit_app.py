@@ -23,8 +23,8 @@ st.title("🤖 Simple AI Agent")
 @st.cache_resource
 def get_agent():
     llm = ChatGroq(
-        model="mixtral-8x7b-32768",
-        temperature=0
+        model="llama-3.3-70b-versatile",
+        temperature=0.2
     )
 
     tools = [
@@ -34,31 +34,29 @@ def get_agent():
         web_search
     ]
 
-    system_prompt = """
-You are a helpful AI Assistant.
+    return llm.bind_tools(tools)
 
-Whenever possible use available tools.
-
-Do not guess answers if a tool can help.
-"""
-
-    return create_agent(
-        llm,
-        tools=tools,
-        system_prompt=system_prompt
-    )
-
-agent_executor = get_agent()
+llm_with_tools = get_agent()
+tool_map = {
+    "calculator": calculator,
+    "current_time": current_time,
+    "read_file": read_file,
+    "web_search": web_search
+}
 
 
 # Initialize chat history
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [
+        {"role": "system", "content": "You are a helpful AI Assistant. If the user asks for personal information like their name or what they are learning, you may use the read_file tool on 'sample.txt'."},
+        {"role": "assistant", "content": "Hello! I am your AI assistant. How can I help you today?"}
+    ]
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    if message["role"] != "system":
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
 # Accept user input
 if prompt := st.chat_input("Ask a question..."):
@@ -69,25 +67,54 @@ if prompt := st.chat_input("Ask a question..."):
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Convert session state messages to format expected by agent
-    agent_messages = []
+    # We need to construct the message history for LangChain
+    from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+    
+    lc_messages = []
     for msg in st.session_state.messages:
-        if msg["role"] == "user":
-            agent_messages.append(("user", msg["content"]))
-        else:
-            agent_messages.append(("assistant", msg["content"]))
+        if msg["role"] == "system":
+            lc_messages.append(SystemMessage(content=msg["content"]))
+        elif msg["role"] == "user":
+            lc_messages.append(HumanMessage(content=msg["content"]))
+        elif msg["role"] == "assistant":
+            lc_messages.append(AIMessage(content=msg["content"]))
+        elif msg["role"] == "tool":
+            lc_messages.append(ToolMessage(content=msg["content"], tool_call_id=msg["tool_call_id"]))
 
     with st.spinner("Thinking..."):
-        # Invoke agent
-        response = agent_executor.invoke(
-            {
-                "messages": agent_messages
-            }
-        )
-        
-        # Get final response content
-        ai_response = response["messages"][-1].content
-    
+        try:
+            # First invocation
+            response = llm_with_tools.invoke(lc_messages)
+            
+            # Loop for tool calls
+            while response.tool_calls:
+                lc_messages.append(response)
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call["args"]
+                    tool_msg_id = tool_call["id"]
+                    
+                    if tool_name in tool_map:
+                        tool_output = tool_map[tool_name].invoke(tool_args)
+                    else:
+                        tool_output = f"Error: Tool {tool_name} not found."
+                    
+                    tool_msg = ToolMessage(content=str(tool_output), tool_call_id=tool_msg_id)
+                    lc_messages.append(tool_msg)
+                    st.session_state.messages.append({
+                        "role": "tool",
+                        "content": str(tool_output),
+                        "tool_call_id": tool_msg_id
+                    })
+                
+                # Re-invoke after tool responses
+                response = llm_with_tools.invoke(lc_messages)
+                
+            ai_response = response.content
+            
+        except Exception as e:
+            ai_response = f"[Error] The AI encountered an issue: {e}"
+
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         st.markdown(ai_response)

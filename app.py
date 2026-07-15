@@ -15,10 +15,8 @@ load_dotenv()
 
 
 llm = ChatGroq(
-    model="mixtral-8x7b-32768",
-    temperature=0,
-    max_retries=0,
-    max_tokens=1024
+    model="llama-3.3-70b-versatile",
+    temperature=0.2
 )
 
 tools = [
@@ -28,17 +26,9 @@ tools = [
     web_search
 ]
 
-system_prompt = """
-You are a helpful AI Assistant.
+llm_with_tools = llm.bind_tools(tools)
 
-If the user asks for personal information like their name or what they are learning, you must use the read_file tool on 'sample.txt'.
-"""
-
-agent_executor = create_agent(
-    llm,
-    tools=tools,
-    system_prompt=system_prompt
-)
+system_prompt = "You are a helpful AI Assistant."
 
 print("=" * 50)
 print("Simple AI Agent")
@@ -46,33 +36,46 @@ print("Type exit to quit")
 print("=" * 50)
 
 chat_history = []
+chat_history.append(("system", system_prompt))
+
+tool_map = {tool.name: tool for tool in tools}
 
 while True:
-
     question = input("\nYou : ")
-
     if question.lower() == "exit":
         break
     
     chat_history.append(("user", question))
 
     try:
-        response = agent_executor.invoke(
-            {
-                "messages": chat_history
-            }
-        )
+        response = llm_with_tools.invoke(chat_history)
+        chat_history.append(response)
 
-        ai_message = response["messages"][-1].content
+        while response.tool_calls:
+            for tool_call in response.tool_calls:
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+                tool_msg_id = tool_call["id"]
+                
+                print(f"[System] Calling tool: {tool_name}...")
+                if tool_name in tool_map:
+                    tool_output = tool_map[tool_name].invoke(tool_args)
+                else:
+                    tool_output = f"Error: Tool {tool_name} not found."
+                
+                from langchain_core.messages import ToolMessage
+                chat_history.append(ToolMessage(content=str(tool_output), tool_call_id=tool_msg_id))
+            
+            response = llm_with_tools.invoke(chat_history)
+            chat_history.append(response)
+
+        ai_message = response.content
         print("\nAI :", ai_message)
-        chat_history.append(("assistant", ai_message))
     
     except KeyboardInterrupt:
         print("\n[Interrupted] You stopped the AI. Let's start a new question.")
-        # Remove the last user message since it was interrupted
         chat_history.pop()
     except Exception as e:
         print(f"\n[Error] The AI encountered an issue (e.g., API Rate Limit): {e}")
         print("Please wait a moment and try again.")
-        # Remove the last user message since it failed
         chat_history.pop()

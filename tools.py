@@ -32,7 +32,7 @@ def current_time(dummy: str = "") -> str:
 @tool
 def read_file(filename: str) -> str:
     """
-    Read a local text file. Use this to read 'sample.txt' to get information about the user, such as their name and what they are currently learning.
+    Read a local text file.
     """
     try:
         with open(filename, "r", encoding="utf-8") as f:
@@ -45,7 +45,6 @@ def read_file(filename: str) -> str:
 def web_search(query: str) -> str:
     """
     Search the internet for general information.
-    Do NOT use this tool to find out the user's name, personal details, or what they are learning.
     """
     try:
         with DDGS() as ddgs:
