@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 from tools import calculator
 from tools import current_time
@@ -53,15 +53,22 @@ tool_map = {
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful AI Assistant."},
-        {"role": "assistant", "content": "Hello! I am your AI assistant. How can I help you today?"}
+        SystemMessage(content="You are a helpful AI Assistant."),
+        AIMessage(content="Hello! I am your AI assistant. How can I help you today?")
     ]
 
 # Display chat messages from history on app rerun
-for message in st.session_state.messages:
-    if message["role"] != "system":
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+for msg in st.session_state.messages:
+    if isinstance(msg, SystemMessage):
+        continue
+    if isinstance(msg, ToolMessage):
+        continue  # Don't show raw tool outputs as chat bubbles
+    
+    role = "user" if isinstance(msg, HumanMessage) else "assistant"
+    # Only render if there's actual text content to show
+    if msg.content and str(msg.content).strip():
+        with st.chat_message(role):
+            st.markdown(str(msg.content))
 
 # Accept user input
 if prompt := st.chat_input("Ask a question..."):
@@ -70,35 +77,16 @@ if prompt := st.chat_input("Ask a question..."):
         st.markdown(prompt)
     
     # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # We need to construct the message history for LangChain
-    from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
-    
-    lc_messages = []
-    for msg in st.session_state.messages:
-        if msg["role"] == "system":
-            lc_messages.append(SystemMessage(content=msg["content"]))
-        elif msg["role"] == "user":
-            lc_messages.append(HumanMessage(content=msg["content"]))
-        elif msg["role"] == "assistant":
-            lc_messages.append(AIMessage(content=msg.get("content", ""), tool_calls=msg.get("tool_calls", [])))
-        elif msg["role"] == "tool":
-            lc_messages.append(ToolMessage(content=msg["content"], tool_call_id=msg["tool_call_id"]))
+    st.session_state.messages.append(HumanMessage(content=prompt))
 
     with st.spinner("Thinking..."):
         try:
             # First invocation
-            response = llm_with_tools.invoke(lc_messages)
+            response = llm_with_tools.invoke(st.session_state.messages)
+            st.session_state.messages.append(response)
             
             # Loop for tool calls
             while response.tool_calls:
-                lc_messages.append(response)
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response.content,
-                    "tool_calls": response.tool_calls
-                })
                 for tool_call in response.tool_calls:
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
@@ -110,24 +98,19 @@ if prompt := st.chat_input("Ask a question..."):
                         tool_output = f"Error: Tool {tool_name} not found."
                     
                     tool_msg = ToolMessage(content=str(tool_output), tool_call_id=tool_msg_id)
-                    lc_messages.append(tool_msg)
-                    st.session_state.messages.append({
-                        "role": "tool",
-                        "content": str(tool_output),
-                        "tool_call_id": tool_msg_id
-                    })
+                    st.session_state.messages.append(tool_msg)
                 
                 # Re-invoke after tool responses
-                response = llm_with_tools.invoke(lc_messages)
+                response = llm_with_tools.invoke(st.session_state.messages)
+                st.session_state.messages.append(response)
                 
             ai_response = response.content
             
         except Exception as e:
             ai_response = f"[Error] The AI encountered an issue: {e}"
+            st.session_state.messages.append(AIMessage(content=ai_response))
 
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
         st.markdown(ai_response)
-        
-    # Add assistant response to chat history
-    st.session_state.messages.append({"role": "assistant", "content": ai_response})
+
