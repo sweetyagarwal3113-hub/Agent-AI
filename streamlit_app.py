@@ -48,7 +48,7 @@ tool_map = {
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful AI Assistant. If the user asks for personal information like their name or what they are learning, you may use the read_file tool on 'sample.txt'."},
+        {"role": "system", "content": "You are a helpful AI Assistant."},
         {"role": "assistant", "content": "Hello! I am your AI assistant. How can I help you today?"}
     ]
 
