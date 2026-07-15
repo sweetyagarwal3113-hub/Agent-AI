@@ -15,8 +15,13 @@ load_dotenv()
 
 
 # Streamlit page config
+# Streamlit page config
 st.set_page_config(page_title="AI Agent", page_icon="🤖")
 st.title("🤖 Simple AI Agent")
+
+if st.button("Clear Chat"):
+    st.session_state.messages = []
+    st.rerun()
 
 
 # Initialize tools and LLM
